@@ -33,9 +33,7 @@ function checkApiKeyOnLoad() {
   if (key) {
     const setup = document.getElementById('apiSetup');
     if (setup) {
-      setup.innerHTML = `<p style="font-size:13px;color:#16a34a;margin-bottom:20px">
-        ✓ Clé API configurée — <button onclick="clearApiKey()" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:13px;text-decoration:underline;font-family:inherit;">Modifier</button>
-      </p>`;
+      setup.innerHTML = '<p style="font-size:13px;color:#16a34a;margin-bottom:20px">✓ Clé API configurée — <button onclick="clearApiKey()" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:13px;text-decoration:underline;font-family:inherit;">Modifier</button></p>';
     }
   }
 }
@@ -58,8 +56,8 @@ async function startAnalysis() {
 
   const apiKey = getApiKey();
   if (!apiKey) {
-    showError('Veuillez d\'abord enregistrer votre clé API Anthropic.');
-    document.getElementById('apiKeyInput')?.focus();
+    showError("Veuillez d'abord enregistrer votre clé API Anthropic.");
+    document.getElementById('apiKeyInput') && document.getElementById('apiKeyInput').focus();
     return;
   }
 
@@ -70,33 +68,8 @@ async function startAnalysis() {
   hideError();
   document.getElementById('results').style.display = 'none';
 
-  const prompt = `Tu es un assistant commercial spécialisé en cybersécurité B2B.
-À partir de l'URL suivante : ${cleanUrl}
-
-Réalise une analyse basée uniquement sur des informations publiques visibles depuis un navigateur (sans scan, sans test intrusif).
-
-Objectifs :
-1. Identifier le secteur d'activité de l'entreprise.
-2. Déterminer si l'entreprise semble avoir une équipe IT interne ou non.
-3. Identifier des opportunités commerciales cybersécurité.
-4. Relever des observations publiques non intrusives : absence apparente de politique de sécurité ou confidentialité visible, formulaires de contact, espaces clients ou authentification, technologies visibles publiquement, APIs ou services exposés mentionnés publiquement, informations sensibles publiées involontairement.
-5. Ne jamais affirmer qu'une vulnérabilité existe.
-6. Utiliser des formulations prudentes : "point à vérifier", "risque potentiel", "opportunité d'audit", "élément pouvant justifier une revue de sécurité".
-
-Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans backticks, sans commentaires :
-{
-  "entreprise": "Nom de l'entreprise",
-  "secteur": "Secteur d'activité précis",
-  "equipe_it": "Oui / Non / Probable / Indéterminé",
-  "equipe_it_detail": "courte explication",
-  "score": 7,
-  "score_justification": "explication du score en 1-2 phrases",
-  "observations": [
-    {"type": "warn|info|ok|neutral", "texte": "observation formulée prudemment"}
-  ],
-  "besoins_probables": ["besoin 1", "besoin 2", "besoin 3"],
-  "services_proposables": ["service 1", "service 2", "service 3"],
-  "email_prospection": "OBJET: Sujet de l'email\\n\\nCorps de l'email de 150 mots max, professionnel, non alarmiste, personnalisé. Structure OBLIGATOIRE : 1) Accroche personnalisée sur l'entreprise (1 phrase). 2) Transition naturelle vers la cybersécurité (1 phrase). 3) Phrase de présentation EXACTE : 'Je m\\'appelle Kenan, fondateur de Kenan Systems, auto-entreprise spécialisée en cybersécurité web. J\\'accompagne les entreprises à sécuriser leur présence en ligne grâce à des services comme l\\'audit de sécurité de site web, le scan de vulnérabilités autorisé et la revue de sécurité complète.' 4) Liste de 3 actions concrètes adaptées à ce qui a été observé sur le site, au format tiret, par exemple : '- Audit de votre CMS (WordPress, etc.) et de ses plugins', '- Scan de vulnérabilités autorisé sur vos formulaires et espaces clients', '- Revue de sécurité et conformité RGPD de votre site'. 5) Appel à l'action : proposition d\\'un échange de 20 minutes. 6) Signature : Kenan | Kenan Systems."}`;
+  /* Prompt court pour rester sous 30k tokens/min */
+  const prompt = 'Analyse cybersecurite commerciale B2B de ' + cleanUrl + '. Observations publiques uniquement, sans scan. Formulations prudentes (point a verifier, risque potentiel). Reponds UNIQUEMENT en JSON valide sans markdown ni backticks:\n{"entreprise":"nom","secteur":"secteur precis","equipe_it":"Oui/Non/Probable/Indetermine","equipe_it_detail":"explication courte","score":7,"score_justification":"1-2 phrases","observations":[{"type":"warn","texte":"obs1"},{"type":"info","texte":"obs2"},{"type":"neutral","texte":"obs3"}],"besoins_probables":["besoin1","besoin2","besoin3"],"services_proposables":["service1","service2","service3"],"email_prospection":"OBJET: sujet\\n\\nBonjour,\\n\\n[accroche sur entreprise]. [transition cybersecurite].\\n\\nJe mappelle Kenan, fondateur de Kenan Systems, auto-entreprise specialisee en cybersecurite web. Jaccompagne les entreprises a securiser leur presence en ligne grace a des services comme laudit de securite de site web, le scan de vulnerabilites autorise et la revue de securite complete.\\n\\n- [action concrete 1 adaptee au site]\\n- [action concrete 2 adaptee au site]\\n- [action concrete 3 adaptee au site]\\n\\nSeriez-vous disponible pour un echange de 20 minutes ?\\n\\nKenan | Kenan Systems"}';
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -108,103 +81,113 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans backticks, sa
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 2000,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1200,
         messages: [{ role: 'user', content: prompt }]
       })
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Erreur API (${response.status})`);
+      const err = await response.json().catch(function() { return {}; });
+      throw new Error(err.error ? err.error.message : 'Erreur API (' + response.status + ')');
     }
 
     const data = await response.json();
     const fullText = (data.content || [])
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
+      .filter(function(b) { return b.type === 'text'; })
+      .map(function(b) { return b.text; })
       .join('\n');
 
-    const jsonMatch = fullText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Format de réponse inattendu. Réessayez.');
-    const result = JSON.parse(jsonMatch[0]);
+    const result = parseJSON(fullText);
+    if (!result) throw new Error('Format de réponse inattendu. Réessayez.');
 
     renderResults(result, cleanUrl);
+
   } catch (e) {
-    showError('Erreur : ' + e.message);
+    if (e.message.includes('rate limit') || e.message.includes('rate_limit')) {
+      showError('Limite de tokens atteinte. Patientez 60 secondes puis réessayez.');
+    } else {
+      showError('Erreur : ' + e.message);
+    }
   } finally {
     setLoading(false);
   }
+}
+
+/* ---------- JSON PARSER ROBUSTE ---------- */
+function parseJSON(text) {
+  if (!text) return null;
+  try { return JSON.parse(text.trim()); } catch(e) {}
+  const s = text.indexOf('{'), e = text.lastIndexOf('}');
+  if (s !== -1 && e > s) {
+    try { return JSON.parse(text.slice(s, e + 1)); } catch(e2) {}
+  }
+  const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+  const s2 = clean.indexOf('{'), e2 = clean.lastIndexOf('}');
+  if (s2 !== -1 && e2 > s2) {
+    try { return JSON.parse(clean.slice(s2, e2 + 1)); } catch(e3) {}
+  }
+  return null;
 }
 
 /* ---------- RENDER ---------- */
 function renderResults(r, url) {
   const score = Math.max(0, Math.min(10, parseInt(r.score) || 0));
   const scoreColor = score >= 7 ? '#16a34a' : score >= 5 ? '#d97706' : '#dc2626';
-  const scoreBg = score >= 7 ? '#22c55e' : score >= 5 ? '#f59e0b' : '#ef4444';
+  const scoreBg    = score >= 7 ? '#22c55e' : score >= 5 ? '#f59e0b' : '#ef4444';
 
-  // Header
   const name = r.entreprise || 'Entreprise';
   document.getElementById('companyName').textContent = name;
-  document.getElementById('companyUrl').textContent = url;
+  document.getElementById('companyUrl').textContent  = url;
   document.getElementById('companyAvatar').textContent = name.charAt(0).toUpperCase();
-  document.getElementById('sectorTag').textContent = r.secteur || '—';
+  document.getElementById('sectorTag').textContent   = r.secteur || '—';
 
-  // Metrics
-  document.getElementById('scoreValue').textContent = score + '/10';
-  document.getElementById('scoreValue').style.color = scoreColor;
-  document.getElementById('scoreFill').style.width = (score * 10) + '%';
+  document.getElementById('scoreValue').textContent  = score + '/10';
+  document.getElementById('scoreValue').style.color  = scoreColor;
+  document.getElementById('scoreFill').style.width   = (score * 10) + '%';
   document.getElementById('scoreFill').style.background = scoreBg;
   document.getElementById('scoreJustif').textContent = r.score_justification || '';
-  document.getElementById('itTeam').textContent = r.equipe_it || '—';
-  document.getElementById('itDetail').textContent = r.equipe_it_detail || '';
-  document.getElementById('obsCount').textContent = (r.observations || []).length;
+  document.getElementById('itTeam').textContent      = r.equipe_it || '—';
+  document.getElementById('itDetail').textContent    = r.equipe_it_detail || '';
+  document.getElementById('obsCount').textContent    = (r.observations || []).length;
 
-  // Observations
   const obsContainer = document.getElementById('obsList');
-  obsContainer.innerHTML = (r.observations || []).map(o => {
+  const symbols = { warn: '!', info: 'i', ok: '✓', neutral: '·' };
+  obsContainer.innerHTML = (r.observations || []).map(function(o) {
     const type = ['warn','info','ok','neutral'].includes(o.type) ? o.type : 'neutral';
-    const symbols = { warn: '!', info: 'i', ok: '✓', neutral: '·' };
-    return `<div class="obs-item">
-      <div class="obs-dot ${type}" aria-hidden="true">${symbols[type]}</div>
-      <span>${escHtml(o.texte)}</span>
-    </div>`;
+    return '<div class="obs-item"><div class="obs-dot ' + type + '" aria-hidden="true">' + symbols[type] + '</div><span>' + escHtml(o.texte) + '</span></div>';
   }).join('') || '<p style="font-size:13px;color:#9ca3af">Aucune observation relevée.</p>';
 
-  // Needs & Services
   document.getElementById('needsTags').innerHTML = (r.besoins_probables || [])
-    .map(b => `<span class="tag tag-blue">${escHtml(b)}</span>`).join('');
+    .map(function(b) { return '<span class="tag tag-blue">' + escHtml(b) + '</span>'; }).join('');
   document.getElementById('servicesTags').innerHTML = (r.services_proposables || [])
-    .map(s => `<span class="tag tag-green">${escHtml(s)}</span>`).join('');
+    .map(function(s) { return '<span class="tag tag-green">' + escHtml(s) + '</span>'; }).join('');
 
-  // Email
-  const emailRaw = r.email_prospection || '';
-  const lines = emailRaw.split('\n');
-  const objIdx = lines.findIndex(l => l.trimStart().startsWith('OBJET:'));
+  const emailRaw   = r.email_prospection || '';
+  const lines      = emailRaw.split('\n');
+  const objIdx     = lines.findIndex(function(l) { return l.trimStart().startsWith('OBJET:'); });
   let emailSubject = '';
-  let emailBody = emailRaw;
+  let emailBody    = emailRaw;
   if (objIdx >= 0) {
     emailSubject = lines[objIdx].replace(/^OBJET:\s*/i, '').trim();
-    emailBody = lines.slice(objIdx + 1).join('\n').trim();
+    emailBody    = lines.slice(objIdx + 1).join('\n').trim();
   }
   lastEmailText = emailBody;
   document.getElementById('emailSubjectLabel').textContent = emailSubject ? 'Objet : ' + emailSubject : '';
   document.getElementById('emailBody').textContent = emailBody;
 
-  // Show
   document.getElementById('results').style.display = 'block';
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /* ---------- UTILS ---------- */
 function setLoading(on) {
-  const btn = document.getElementById('analyzeBtn');
-  const txt = document.getElementById('analyzeBtnText');
+  const btn  = document.getElementById('analyzeBtn');
+  const txt  = document.getElementById('analyzeBtnText');
   const spin = document.getElementById('analyzeBtnSpinner');
   if (!btn) return;
   btn.disabled = on;
-  txt.textContent = on ? 'Analyse...' : 'Analyser';
+  if (txt)  txt.textContent = on ? 'Analyse...' : 'Analyser';
   if (spin) spin.style.display = on ? 'block' : 'none';
 }
 
@@ -229,14 +212,14 @@ function newAnalysis() {
 
 function copyEmail() {
   if (!lastEmailText) return;
-  navigator.clipboard.writeText(lastEmailText).then(() => {
+  navigator.clipboard.writeText(lastEmailText).then(function() {
     const btn = document.getElementById('copyBtn');
     if (!btn) return;
     const original = btn.innerHTML;
-    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 7l4 4 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Copié !`;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7l4 4 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Copié !';
     btn.style.color = '#16a34a';
-    setTimeout(() => { btn.innerHTML = original; btn.style.color = ''; }, 2200);
-  }).catch(() => {
+    setTimeout(function() { btn.innerHTML = original; btn.style.color = ''; }, 2200);
+  }).catch(function() {
     const ta = document.createElement('textarea');
     ta.value = lastEmailText;
     ta.style.position = 'fixed'; ta.style.opacity = '0';
@@ -247,20 +230,20 @@ function copyEmail() {
 }
 
 function escHtml(str) {
-  return String(str)
+  return String(str || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
 
-/* ---------- ENTER KEY ---------- */
-document.addEventListener('DOMContentLoaded', () => {
+/* ---------- INIT ---------- */
+document.addEventListener('DOMContentLoaded', function() {
   checkApiKeyOnLoad();
-  document.getElementById('urlInput')?.addEventListener('keydown', e => {
+  document.getElementById('urlInput').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') startAnalysis();
   });
-  document.getElementById('apiKeyInput')?.addEventListener('keydown', e => {
+  document.getElementById('apiKeyInput') && document.getElementById('apiKeyInput').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') saveApiKey();
   });
 });
