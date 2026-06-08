@@ -56,7 +56,7 @@ function clearApiKey() {
 async function generateProspects() {
   const apiKey = getApiKey();
   if (!apiKey) {
-    showError('Veuillez d\'abord enregistrer votre clé API Anthropic en haut de la page.');
+    showError("Veuillez d'abord enregistrer votre clé API Anthropic en haut de la page.");
     return;
   }
 
@@ -65,7 +65,7 @@ async function generateProspects() {
 
   setLoading(true);
   hideError();
-  document.getElementById('statsRow').style.display = 'none';
+  document.getElementById('statsRow').style.display    = 'none';
   document.getElementById('exportCsvBtn').style.display = 'none';
   document.getElementById('exportMdBtn').style.display  = 'none';
   document.getElementById('refreshBtn').style.display   = 'none';
@@ -76,39 +76,22 @@ async function generateProspects() {
   animateProgress();
 
   const prompt = `Tu es un analyste commercial spécialisé en cybersécurité B2B.
-Ta mission est d'identifier des PME et startups susceptibles d'avoir besoin d'un audit de sécurité de leur site web.
+Génère une liste de 50 PME et startups réelles susceptibles d'avoir besoin d'un audit de sécurité web.
 
 Critères :
 - Entreprises de 5 à 250 employés
-- PME, startups, agences web, cabinets de conseil, e-commerce, SaaS, fintech, proptech, healthtech
-- Priorité aux entreprises ayant un site web, espace client, formulaire de contact ou application web
+- Secteurs : PME, startups, agences web, e-commerce, SaaS, fintech, proptech, healthtech, cabinets de conseil
+- Avoir un site web avec formulaire, espace client ou application web
 - Exclure grandes entreprises et administrations publiques
-${secteur ? '- Secteur prioritaire : ' + secteur : ''}
-${pays    ? '- Pays prioritaire : '    + pays    : '- Pays : France, Belgique, Suisse, Luxembourg prioritairement'}
+${secteur ? '- Secteur : ' + secteur : ''}
+${pays ? '- Pays : ' + pays : '- Pays : France en priorité, puis Belgique, Suisse, Luxembourg'}
 
-Génère EXACTEMENT 50 entreprises RÉELLES avec de vraies URLs vérifiables.
+IMPORTANT : Réponds UNIQUEMENT avec du JSON brut. Pas de texte avant, pas de texte après, pas de backticks, pas de markdown. Commence directement par { et termine par }.
 
-Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans backticks :
-{
-  "prospects": [
-    {
-      "rang": 1,
-      "nom": "Nom réel de l'entreprise",
-      "site": "https://www.site-reel.fr",
-      "secteur": "Secteur précis",
-      "pays": "France",
-      "taille": "10-50 employés",
-      "technologies": ["WordPress", "Formulaire contact"],
-      "score": 9,
-      "opportunites": "Description courte des opportunités (max 90 caractères)",
-      "services": ["Audit CMS", "Scan vulnérabilités"],
-      "linkedin": "https://www.linkedin.com/company/nom-entreprise",
-      "contact": "contact@entreprise.fr ou formulaire web"
-    }
-  ]
-}
+Format exact :
+{"prospects":[{"rang":1,"nom":"Nom entreprise","site":"https://www.exemple.fr","secteur":"E-commerce","pays":"France","taille":"20-50 employes","technologies":["WordPress","WooCommerce"],"score":9,"opportunites":"Audit CMS et plugins, formulaire non securise","services":["Audit CMS","Scan vulnerabilites"],"linkedin":"https://www.linkedin.com/company/exemple","contact":"contact@exemple.fr"}]}
 
-Classe du score le plus élevé (10) au plus bas (1). Varie les secteurs et pays.`;
+Classe par score décroissant (10 = très pertinent, 1 = peu pertinent). Génère exactement 50 entrées.`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -122,54 +105,43 @@ Classe du score le plus élevé (10) au plus bas (1). Varie les secteurs et pays
       body: JSON.stringify({
         model: 'claude-sonnet-4-5',
         max_tokens: 8000,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages: [{ role: 'user', content: prompt }]
       })
     });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Erreur API (${response.status})`);
+      throw new Error(err.error?.message || 'Erreur API (' + response.status + ')');
     }
 
     const data = await response.json();
     const text = (data.content || [])
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('\n');
+      .filter(function(b) { return b.type === 'text'; })
+      .map(function(b) { return b.text; })
+      .join('');
 
-    const match = text.match(/\{[\s\S]*"prospects"[\s\S]*\}/);
-    if (!match) throw new Error('Format de réponse inattendu. Réessayez.');
-
-    let jsonStr = match[0];
-    const lastBracket = jsonStr.lastIndexOf('}');
-    jsonStr = jsonStr.substring(0, lastBracket + 1);
-
-    let result;
-    try {
-      result = JSON.parse(jsonStr);
-    } catch(parseErr) {
-      jsonStr = jsonStr
-        .replace(/,\s*([}\]])/g, '$1')
-        .replace(/([^\\])"([^"]*)\n([^"]*)"/, '$1"$2 $3"');
-      result = JSON.parse(jsonStr);
+    const result = parseJSON(text);
+    if (!result || !result.prospects || !result.prospects.length) {
+      throw new Error('Aucun prospect recu. Reessayez.');
     }
-    allProspects = result.prospects || [];
 
+    allProspects = result.prospects;
     applyFilters();
     updateStats();
 
-    document.getElementById('statsRow').style.display   = 'grid';
+    document.getElementById('statsRow').style.display    = 'grid';
     document.getElementById('exportCsvBtn').style.display = '';
     document.getElementById('exportMdBtn').style.display  = '';
     document.getElementById('refreshBtn').style.display   = '';
+    clearInterval(progInterval);
     document.getElementById('progressFill').style.width = '100%';
-    setTimeout(() => {
+    setTimeout(function() {
       document.getElementById('progressBar').style.display = 'none';
       document.getElementById('progressFill').style.width = '0%';
     }, 600);
 
   } catch (e) {
+    clearInterval(progInterval);
     showError('Erreur : ' + e.message);
     document.getElementById('tableEmpty').style.display = 'flex';
     document.getElementById('progressBar').style.display = 'none';
@@ -178,12 +150,43 @@ Classe du score le plus élevé (10) au plus bas (1). Varie les secteurs et pays
   setLoading(false);
 }
 
+/* ---------- JSON PARSER ROBUSTE ---------- */
+function parseJSON(text) {
+  if (!text) return null;
+
+  // Tentative 1 : texte brut direct
+  try { return JSON.parse(text.trim()); } catch(e) {}
+
+  // Tentative 2 : extraire entre le premier { et dernier }
+  const start = text.indexOf('{');
+  const end   = text.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)); } catch(e) {}
+  }
+
+  // Tentative 3 : nettoyer les backticks markdown et réessayer
+  const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+  const s2 = clean.indexOf('{');
+  const e2 = clean.lastIndexOf('}');
+  if (s2 !== -1 && e2 !== -1 && e2 > s2) {
+    try { return JSON.parse(clean.slice(s2, e2 + 1)); } catch(e) {}
+  }
+
+  // Tentative 4 : chercher spécifiquement le tableau prospects
+  const arrMatch = text.match(/"prospects"\s*:\s*\[[\s\S]*\]/);
+  if (arrMatch) {
+    try { return JSON.parse('{"' + arrMatch[0] + '}'); } catch(e) {}
+  }
+
+  return null;
+}
+
 /* ---------- PROGRESS ANIMATION ---------- */
 function animateProgress() {
   let p = 0;
   document.getElementById('progressFill').style.width = '0%';
   clearInterval(progInterval);
-  progInterval = setInterval(() => {
+  progInterval = setInterval(function() {
     p = Math.min(p + Math.random() * 2.5, 88);
     document.getElementById('progressFill').style.width = Math.round(p) + '%';
   }, 400);
@@ -196,11 +199,11 @@ function applyFilters() {
   const score   = parseInt(document.getElementById('filterScore').value) || 0;
   const search  = document.getElementById('filterSearch').value.toLowerCase();
 
-  filtered = allProspects.filter(p => {
+  filtered = allProspects.filter(function(p) {
     if (secteur && !(p.secteur || '').toLowerCase().includes(secteur)) return false;
     if (pays    && !(p.pays    || '').toLowerCase().includes(pays))    return false;
     if ((parseInt(p.score) || 0) < score) return false;
-    if (search  && !`${p.nom} ${p.site} ${p.secteur} ${p.pays}`.toLowerCase().includes(search)) return false;
+    if (search  && !(p.nom + ' ' + p.site + ' ' + p.secteur + ' ' + p.pays).toLowerCase().includes(search)) return false;
     return true;
   });
 
@@ -208,7 +211,7 @@ function applyFilters() {
 }
 
 function sortFiltered() {
-  filtered.sort((a, b) => {
+  filtered.sort(function(a, b) {
     let va = a[sortKey], vb = b[sortKey];
     if (typeof va === 'string') va = va.toLowerCase();
     if (typeof vb === 'string') vb = vb.toLowerCase();
@@ -220,18 +223,18 @@ function sortFiltered() {
 
 function sortTable(key) {
   if (sortKey === key) { sortDir *= -1; } else { sortKey = key; sortDir = -1; }
-  document.querySelectorAll('thead th .sort-icon').forEach(el => {
+  document.querySelectorAll('thead th .sort-icon').forEach(function(el) {
     el.textContent = '↕';
     el.classList.remove('active');
   });
-  const th = document.querySelector(`thead th[data-key="${key}"] .sort-icon`);
+  const th = document.querySelector('thead th[data-key="' + key + '"] .sort-icon');
   if (th) { th.textContent = sortDir === -1 ? '↓' : '↑'; th.classList.add('active'); }
   sortFiltered();
 }
 
 /* ---------- RENDER ---------- */
 function renderTable() {
-  const body  = document.getElementById('prospectsBody');
+  const body   = document.getElementById('prospectsBody');
   const scroll = document.getElementById('tableScroll');
   const empty  = document.getElementById('tableEmpty');
   const pag    = document.getElementById('pagination');
@@ -249,47 +252,41 @@ function renderTable() {
   empty.style.display  = 'none';
   scroll.style.display = 'block';
 
-  const start  = (currentPage - 1) * PER_PAGE;
+  const start    = (currentPage - 1) * PER_PAGE;
   const pageRows = filtered.slice(start, start + PER_PAGE);
 
-  body.innerHTML = pageRows.map((p, i) => {
+  body.innerHTML = pageRows.map(function(p, i) {
     const sc  = parseInt(p.score) || 0;
     const cls = sc >= 8 ? 'score-high' : sc >= 6 ? 'score-mid' : 'score-low';
-
-    const techs = (p.technologies || [])
-      .map(t => `<span class="tag">${esc(t)}</span>`).join('');
-    const svcs = (p.services || [])
-      .map(s => `<span class="tag tag-blue">${esc(s)}</span>`).join('');
-
+    const techs = (p.technologies || []).map(function(t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('');
+    const svcs  = (p.services     || []).map(function(s) { return '<span class="tag tag-blue">' + esc(s) + '</span>'; }).join('');
     const siteLabel = (p.site || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
     const liHtml = p.linkedin
-      ? `<a href="${esc(p.linkedin)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;text-decoration:none">Voir ↗</a>`
+      ? '<a href="' + esc(p.linkedin) + '" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;text-decoration:none">Voir ↗</a>'
       : '<span style="color:var(--text-light)">—</span>';
 
-    return `<tr>
-      <td style="color:var(--text-light);font-size:11px;text-align:center">${start + i + 1}</td>
-      <td style="font-weight:500;min-width:130px">${esc(p.nom || '—')}</td>
-      <td class="tag-link" style="min-width:120px">
-        <a href="${esc(p.site || '#')}" target="_blank" rel="noopener">${esc(siteLabel)}</a>
-      </td>
-      <td><span class="tag">${esc(p.secteur || '—')}</span></td>
-      <td style="white-space:nowrap">${esc(p.pays || '—')}</td>
-      <td style="font-size:11px;color:var(--text-muted);white-space:nowrap">${esc(p.taille || '—')}</td>
-      <td style="min-width:150px">${techs}</td>
-      <td style="text-align:center"><span class="score-pill ${cls}">${sc}</span></td>
-      <td style="font-size:12px;color:var(--text-muted)">${esc(p.opportunites || '—')}</td>
-      <td style="min-width:160px">${svcs}</td>
-      <td>${liHtml}</td>
-      <td style="font-size:11px;color:var(--text-muted);min-width:140px">${esc(p.contact || '—')}</td>
-    </tr>`;
+    return '<tr>'
+      + '<td style="color:var(--text-light);font-size:11px;text-align:center">' + (start + i + 1) + '</td>'
+      + '<td style="font-weight:500;min-width:130px">' + esc(p.nom || '—') + '</td>'
+      + '<td class="tag-link" style="min-width:120px"><a href="' + esc(p.site || '#') + '" target="_blank" rel="noopener">' + esc(siteLabel) + '</a></td>'
+      + '<td><span class="tag">' + esc(p.secteur || '—') + '</span></td>'
+      + '<td style="white-space:nowrap">' + esc(p.pays || '—') + '</td>'
+      + '<td style="font-size:11px;color:var(--text-muted);white-space:nowrap">' + esc(p.taille || '—') + '</td>'
+      + '<td style="min-width:150px">' + techs + '</td>'
+      + '<td style="text-align:center"><span class="score-pill ' + cls + '">' + sc + '</span></td>'
+      + '<td style="font-size:12px;color:var(--text-muted)">' + esc(p.opportunites || '—') + '</td>'
+      + '<td style="min-width:160px">' + svcs + '</td>'
+      + '<td>' + liHtml + '</td>'
+      + '<td style="font-size:11px;color:var(--text-muted);min-width:140px">' + esc(p.contact || '—') + '</td>'
+      + '</tr>';
   }).join('');
 
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
   document.getElementById('pageInfo').textContent =
-    `${filtered.length} prospect${filtered.length > 1 ? 's' : ''} — page ${currentPage} / ${totalPages}`;
-  document.getElementById('pageBtns').innerHTML = Array.from({ length: totalPages }, (_, i) =>
-    `<button class="page-btn ${i + 1 === currentPage ? 'active' : ''}" onclick="goPage(${i + 1})">${i + 1}</button>`
-  ).join('');
+    filtered.length + ' prospect' + (filtered.length > 1 ? 's' : '') + ' — page ' + currentPage + ' / ' + totalPages;
+  document.getElementById('pageBtns').innerHTML = Array.from({ length: totalPages }, function(_, i) {
+    return '<button class="page-btn ' + (i + 1 === currentPage ? 'active' : '') + '" onclick="goPage(' + (i + 1) + ')">' + (i + 1) + '</button>';
+  }).join('');
   pag.style.display = 'flex';
 }
 
@@ -298,11 +295,11 @@ function goPage(n) { currentPage = n; renderTable(); }
 /* ---------- STATS ---------- */
 function updateStats() {
   const total   = allProspects.length;
-  const high    = allProspects.filter(p => (parseInt(p.score) || 0) >= 8).length;
+  const high    = allProspects.filter(function(p) { return (parseInt(p.score) || 0) >= 8; }).length;
   const avg     = total
-    ? (allProspects.reduce((s, p) => s + (parseInt(p.score) || 0), 0) / total).toFixed(1)
+    ? (allProspects.reduce(function(s, p) { return s + (parseInt(p.score) || 0); }, 0) / total).toFixed(1)
     : 0;
-  const sectors = new Set(allProspects.map(p => p.secteur)).size;
+  const sectors = new Set(allProspects.map(function(p) { return p.secteur; })).size;
 
   document.getElementById('statTotal').textContent   = total;
   document.getElementById('statHigh').textContent    = high;
@@ -313,30 +310,32 @@ function updateStats() {
 /* ---------- EXPORT ---------- */
 function exportCsv() {
   if (!filtered.length) return;
-  const headers = ['Rang','Nom','Site','Secteur','Pays','Taille','Technologies','Score','Opportunités','Services','LinkedIn','Contact'];
-  const rows = filtered.map((p, i) => [
-    i + 1, p.nom, p.site, p.secteur, p.pays, p.taille,
-    (p.technologies || []).join(' | '),
-    p.score, p.opportunites,
-    (p.services || []).join(' | '),
-    p.linkedin, p.contact
-  ].map(v => '"' + String(v || '').replace(/"/g, '""') + '"'));
-  const csv = '\uFEFF' + [headers, ...rows].map(r => r.join(',')).join('\r\n');
+  const headers = ['Rang','Nom','Site','Secteur','Pays','Taille','Technologies','Score','Opportunites','Services','LinkedIn','Contact'];
+  const rows = filtered.map(function(p, i) {
+    return [
+      i + 1, p.nom, p.site, p.secteur, p.pays, p.taille,
+      (p.technologies || []).join(' | '),
+      p.score, p.opportunites,
+      (p.services || []).join(' | '),
+      p.linkedin, p.contact
+    ].map(function(v) { return '"' + String(v || '').replace(/"/g, '""') + '"'; });
+  });
+  const csv = '\uFEFF' + [headers, ...rows].map(function(r) { return r.join(','); }).join('\r\n');
   download('prospects-kenan-systems.csv', csv, 'text/csv;charset=utf-8;');
 }
 
 function exportMd() {
   if (!filtered.length) return;
-  const header = '| # | Entreprise | Site | Secteur | Pays | Score | Opportunités | Services |\n|---|---|---|---|---|---|---|---|';
-  const rows = filtered.map((p, i) =>
-    `| ${i + 1} | **${p.nom}** | [${(p.site || '').replace(/^https?:\/\/(www\.)?/, '')}](${p.site}) | ${p.secteur} | ${p.pays} | ${p.score}/10 | ${p.opportunites} | ${(p.services || []).join(', ')} |`
-  );
-  download('prospects-kenan-systems.md', '# Prospects Kenan Systems\n\nGénéré le ' + new Date().toLocaleDateString('fr-FR') + '\n\n' + [header, ...rows].join('\n'), 'text/markdown');
+  const header = '| # | Entreprise | Site | Secteur | Pays | Score | Opportunites | Services |\n|---|---|---|---|---|---|---|---|';
+  const rows = filtered.map(function(p, i) {
+    return '| ' + (i + 1) + ' | **' + p.nom + '** | [' + (p.site || '').replace(/^https?:\/\/(www\.)?/, '') + '](' + p.site + ') | ' + p.secteur + ' | ' + p.pays + ' | ' + p.score + '/10 | ' + p.opportunites + ' | ' + (p.services || []).join(', ') + ' |';
+  });
+  download('prospects-kenan-systems.md', '# Prospects Kenan Systems\n\nGenere le ' + new Date().toLocaleDateString('fr-FR') + '\n\n' + [header].concat(rows).join('\n'), 'text/markdown');
 }
 
 function download(filename, content, type) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([content], { type }));
+  a.href = URL.createObjectURL(new Blob([content], { type: type }));
   a.download = filename;
   document.body.appendChild(a);
   a.click();
@@ -349,8 +348,8 @@ function setLoading(on) {
   if (!btn) return;
   btn.disabled = on;
   btn.innerHTML = on
-    ? `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true" style="animation:spin .8s linear infinite"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" stroke-width="1.5" stroke-dasharray="28" stroke-dashoffset="8" opacity="0.35"/><path d="M7.5 1.5a6 6 0 016 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Génération en cours…`
-    : `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M7.5 1v2M7.5 12v2M1 7.5h2M12 7.5h2M3.05 3.05l1.42 1.42M10.53 10.53l1.42 1.42M3.05 11.95l1.42-1.42M10.53 4.47l1.42-1.42" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg> Générer 50 prospects`;
+    ? '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true" style="animation:spin .8s linear infinite"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" stroke-width="1.5" stroke-dasharray="28" stroke-dashoffset="8" opacity="0.35"/><path d="M7.5 1.5a6 6 0 016 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Generation en cours...'
+    : '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M7.5 1v2M7.5 12v2M1 7.5h2M12 7.5h2M3.05 3.05l1.42 1.42M10.53 10.53l1.42 1.42M3.05 11.95l1.42-1.42M10.53 4.47l1.42-1.42" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg> Generer 50 prospects';
 }
 
 function showError(msg) {
@@ -374,7 +373,7 @@ function esc(s) {
 }
 
 /* ---------- INIT ---------- */
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
   checkApiKeyOnLoad();
 
   const style = document.createElement('style');
@@ -384,7 +383,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('filterSecteur').addEventListener('change', applyFilters);
   document.getElementById('filterPays').addEventListener('change', applyFilters);
   document.getElementById('filterScore').addEventListener('change', applyFilters);
-  document.getElementById('apiKeyInput')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') saveApiKey();
-  });
+  const apiInput = document.getElementById('apiKeyInput');
+  if (apiInput) {
+    apiInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') saveApiKey();
+    });
+  }
 });
