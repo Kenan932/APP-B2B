@@ -52,7 +52,7 @@ function clearApiKey() {
   location.reload();
 }
 
-/* ---------- GENERATE : 3 batchs de 10 avec délai ---------- */
+/* ---------- GENERATE : 1 batch de 10 ---------- */
 async function generateProspects() {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -78,22 +78,12 @@ async function generateProspects() {
   allProspects = [];
 
   try {
-    /* 3 appels de 10 prospects avec 3 secondes entre chaque — reste sous 30k tokens/min */
-    const batches = [
-      { start: 1,  count: 10 },
-      { start: 11, count: 10 },
-      { start: 21, count: 10 }
-    ];
-
-    for (let i = 0; i < batches.length; i++) {
-      if (i > 0) await sleep(3500);
-      const batch = await fetchBatch(apiKey, secteur, pays, batches[i].start, batches[i].count);
-      allProspects = allProspects.concat(batch);
-      /* Affichage progressif */
-      applyFilters();
-      updateStats();
-      document.getElementById('statsRow').style.display = 'grid';
-    }
+    /* 1 seul appel de 10 prospects — reste largement sous 30k tokens/min */
+    const batch = await fetchBatch(apiKey, secteur, pays, 1, 10);
+    allProspects = batch;
+    applyFilters();
+    updateStats();
+    document.getElementById('statsRow').style.display = 'grid';
 
     if (!allProspects.length) throw new Error('Aucun prospect reçu. Réessayez.');
 
