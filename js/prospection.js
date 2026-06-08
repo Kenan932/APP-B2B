@@ -138,10 +138,22 @@ Classe du score le plus élevé (10) au plus bas (1). Varie les secteurs et pays
       .map(b => b.text)
       .join('\n');
 
-    const match = text.match(/\{[\s\S]*\}/);
+    const match = text.match(/\{[\s\S]*"prospects"[\s\S]*\}/);
     if (!match) throw new Error('Format de réponse inattendu. Réessayez.');
 
-    const result = JSON.parse(match[0]);
+    let jsonStr = match[0];
+    const lastBracket = jsonStr.lastIndexOf('}');
+    jsonStr = jsonStr.substring(0, lastBracket + 1);
+
+    let result;
+    try {
+      result = JSON.parse(jsonStr);
+    } catch(parseErr) {
+      jsonStr = jsonStr
+        .replace(/,\s*([}\]])/g, '$1')
+        .replace(/([^\\])"([^"]*)\n([^"]*)"/, '$1"$2 $3"');
+      result = JSON.parse(jsonStr);
+    }
     allProspects = result.prospects || [];
 
     applyFilters();
