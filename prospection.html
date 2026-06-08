@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prospection — Kenan Systems</title>
+  <meta name="description" content="Générez une liste de 50 prospects PME/Startup ciblés pour votre campagne de prospection cybersécurité." />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/prospection.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="container">
+      <div class="logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect width="28" height="28" rx="7" fill="#1a1a2e"/>
+          <path d="M14 5L7 9v5c0 4.42 2.98 8.57 7 9.93 4.02-1.36 7-5.51 7-9.93V9L14 5z" fill="#4f8ef7" opacity="0.9"/>
+          <circle cx="14" cy="14" r="3" fill="white" opacity="0.9"/>
+        </svg>
+        <span class="logo-text">CyberProspect</span>
+        <span class="logo-badge">B2B</span>
+      </div>
+      <nav class="nav-links">
+        <a href="index.html">Analyser un site</a>
+        <a href="prospection.html" class="btn-nav">Générateur prospects</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="page-hero">
+    <div class="container">
+      <div class="page-hero-inner">
+        <div>
+          <div class="hero-eyebrow">Kenan Systems — Outil de prospection</div>
+          <h1 class="page-title">Trouvez vos <span class="gradient-text">50 meilleurs prospects</span></h1>
+          <p class="page-desc">Générez automatiquement une liste de PME et startups ciblées, classées par pertinence, prêtes pour votre campagne cybersécurité.</p>
+        </div>
+        <div class="api-inline" id="apiSetup">
+          <div class="api-inline-label">Clé API Anthropic</div>
+          <div class="api-inline-row">
+            <input type="password" id="apiKeyInput" placeholder="sk-ant-api03-…" autocomplete="off" />
+            <button onclick="saveApiKey()" class="btn-primary btn-sm">OK</button>
+          </div>
+          <p class="api-note" id="apiStatus"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="prospection-section">
+    <div class="container">
+
+      <!-- FILTERS -->
+      <div class="filters-bar">
+        <div class="filter-group">
+          <label for="filterSecteur">Secteur</label>
+          <select id="filterSecteur">
+            <option value="">Tous les secteurs</option>
+            <option>E-commerce</option>
+            <option>SaaS</option>
+            <option>Fintech</option>
+            <option>Healthtech</option>
+            <option>Proptech</option>
+            <option>Agence web</option>
+            <option>Cabinet de conseil</option>
+            <option>Startup</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="filterPays">Pays</label>
+          <select id="filterPays">
+            <option value="">Tous les pays</option>
+            <option>France</option>
+            <option>Belgique</option>
+            <option>Suisse</option>
+            <option>Luxembourg</option>
+            <option>Canada</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="filterScore">Score minimum</label>
+          <select id="filterScore">
+            <option value="0">Tous (1–10)</option>
+            <option value="6">Bon (6+)</option>
+            <option value="7">Très bon (7+)</option>
+            <option value="8">Excellent (8+)</option>
+          </select>
+        </div>
+        <div class="filter-group filter-search">
+          <label for="filterSearch">Recherche</label>
+          <input type="text" id="filterSearch" placeholder="Nom, site, secteur…" oninput="applyFilters()" />
+        </div>
+        <div class="filter-actions">
+          <button class="btn-primary" id="genBtn" onclick="generateProspects()">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M7.5 1v2M7.5 12v2M1 7.5h2M12 7.5h2M3.05 3.05l1.42 1.42M10.53 10.53l1.42 1.42M3.05 11.95l1.42-1.42M10.53 4.47l1.42-1.42" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            Générer 50 prospects
+          </button>
+        </div>
+      </div>
+
+      <!-- PROGRESS -->
+      <div class="progress-bar" id="progressBar" style="display:none">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+
+      <!-- ERROR -->
+      <div class="error-banner" id="errorMsg" style="display:none"></div>
+
+      <!-- STATS -->
+      <div class="stats-row" id="statsRow" style="display:none">
+        <div class="stat-card">
+          <div class="stat-value" id="statTotal">0</div>
+          <div class="stat-label">Prospects générés</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statHigh" style="color:#16a34a">0</div>
+          <div class="stat-label">Score 8+</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statAvg">0</div>
+          <div class="stat-label">Score moyen</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statSectors">0</div>
+          <div class="stat-label">Secteurs couverts</div>
+        </div>
+        <div class="stat-card export-card">
+          <button class="btn-export" id="exportCsvBtn" onclick="exportCsv()" style="display:none">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 10v2h10v-2M7 2v7M4 6l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Exporter CSV
+          </button>
+          <button class="btn-export" id="exportMdBtn" onclick="exportMd()" style="display:none">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><rect x="1" y="2" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M3 9V5l2 2.5L7 5v4M8.5 9V5M10.5 7.5L9 9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Exporter Markdown
+          </button>
+        </div>
+      </div>
+
+      <!-- TABLE -->
+      <div class="table-container" id="tableContainer">
+        <div class="table-empty" id="tableEmpty">
+          <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="18" stroke="currentColor" stroke-width="1.5" opacity="0.2"/><circle cx="20" cy="20" r="10" stroke="currentColor" stroke-width="1.5" opacity="0.3"/><circle cx="20" cy="20" r="3" fill="currentColor" opacity="0.4"/><line x1="28" y1="8" x2="20" y2="20" stroke="currentColor" stroke-width="1.5" opacity="0.3"/></svg>
+          <p>Configurez vos filtres et cliquez sur "Générer 50 prospects"</p>
+        </div>
+        <div class="table-scroll" id="tableScroll" style="display:none">
+          <table id="prospectsTable">
+            <thead>
+              <tr>
+                <th class="col-rank" onclick="sortTable('rang')" data-key="rang"># <span class="sort-icon">↕</span></th>
+                <th onclick="sortTable('nom')" data-key="nom">Entreprise <span class="sort-icon">↕</span></th>
+                <th>Site web</th>
+                <th onclick="sortTable('secteur')" data-key="secteur">Secteur <span class="sort-icon">↕</span></th>
+                <th onclick="sortTable('pays')" data-key="pays">Pays <span class="sort-icon">↕</span></th>
+                <th>Taille</th>
+                <th>Technologies</th>
+                <th class="col-score" onclick="sortTable('score')" data-key="score">Score <span class="sort-icon active">↓</span></th>
+                <th class="col-opps">Opportunités</th>
+                <th>Services</th>
+                <th>LinkedIn</th>
+                <th>Contact</th>
+              </tr>
+            </thead>
+            <tbody id="prospectsBody"></tbody>
+          </table>
+        </div>
+        <div class="table-pagination" id="pagination" style="display:none">
+          <span class="page-info" id="pageInfo"></span>
+          <div class="page-btns" id="pageBtns"></div>
+          <button class="btn-refresh" id="refreshBtn" onclick="generateProspects()" style="display:none">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true"><path d="M11 6.5A4.5 4.5 0 112 6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M11 4v2.5H8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Nouvelle liste
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-logo">
+          <span class="logo-text">CyberProspect</span>
+          <span class="footer-desc">Kenan Systems — Cybersécurité web B2B</span>
+        </div>
+        <div class="footer-note">
+          Données publiques uniquement. Aucun scan, aucun test sans autorisation.
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/prospection.js"></script>
+</body>
+</html>
