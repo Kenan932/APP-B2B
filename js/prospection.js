@@ -52,11 +52,11 @@ function clearApiKey() {
   location.reload();
 }
 
-/* ---------- GENERATE ---------- */
+/* ---------- GENERATE : 3 batchs de 10 avec délai ---------- */
 async function generateProspects() {
   const apiKey = getApiKey();
   if (!apiKey) {
-    showError("Veuillez d'abord enregistrer votre clé API Anthropic en haut de la page.");
+    showError("Veuillez d'abord enregistrer votre clé API Anthropic.");
     return;
   }
 
@@ -65,7 +65,7 @@ async function generateProspects() {
 
   setLoading(true);
   hideError();
-  document.getElementById('statsRow').style.display    = 'none';
+  document.getElementById('statsRow').style.display     = 'none';
   document.getElementById('exportCsvBtn').style.display = 'none';
   document.getElementById('exportMdBtn').style.display  = 'none';
   document.getElementById('refreshBtn').style.display   = 'none';
@@ -75,18 +75,28 @@ async function generateProspects() {
   document.getElementById('progressBar').style.display  = 'block';
   animateProgress();
 
-  /* Deux appels : d'abord 20 prospects, puis 30 autres — évite la troncature */
+  allProspects = [];
+
   try {
-    const batch1 = await fetchProspects(apiKey, secteur, pays, 1, 20);
-    const batch2 = await fetchProspects(apiKey, secteur, pays, 21, 30);
-    allProspects = batch1.concat(batch2);
+    /* 3 appels de 10 prospects avec 3 secondes entre chaque — reste sous 30k tokens/min */
+    const batches = [
+      { start: 1,  count: 10 },
+      { start: 11, count: 10 },
+      { start: 21, count: 10 }
+    ];
+
+    for (let i = 0; i < batches.length; i++) {
+      if (i > 0) await sleep(3500);
+      const batch = await fetchBatch(apiKey, secteur, pays, batches[i].start, batches[i].count);
+      allProspects = allProspects.concat(batch);
+      /* Affichage progressif */
+      applyFilters();
+      updateStats();
+      document.getElementById('statsRow').style.display = 'grid';
+    }
 
     if (!allProspects.length) throw new Error('Aucun prospect reçu. Réessayez.');
 
-    applyFilters();
-    updateStats();
-
-    document.getElementById('statsRow').style.display    = 'grid';
     document.getElementById('exportCsvBtn').style.display = '';
     document.getElementById('exportMdBtn').style.display  = '';
     document.getElementById('refreshBtn').style.display   = '';
@@ -95,29 +105,35 @@ async function generateProspects() {
     setTimeout(function() {
       document.getElementById('progressBar').style.display = 'none';
       document.getElementById('progressFill').style.width = '0%';
-    }, 600);
+    }, 500);
 
   } catch (e) {
     clearInterval(progInterval);
-    showError('Erreur : ' + e.message);
-    document.getElementById('tableEmpty').style.display = 'flex';
+    if (e.message.includes('rate limit') || e.message.includes('rate_limit')) {
+      showError('Limite de tokens atteinte. Patientez 60 secondes puis réessayez.');
+    } else {
+      showError('Erreur : ' + e.message);
+    }
+    if (!allProspects.length) {
+      document.getElementById('tableEmpty').style.display = 'flex';
+    }
     document.getElementById('progressBar').style.display = 'none';
   }
 
   setLoading(false);
 }
 
-/* ---------- FETCH BATCH ---------- */
-async function fetchProspects(apiKey, secteur, pays, startRang, count) {
-  const prompt = `Tu es un analyste commercial B2B cybersécurité.
-Génère une liste de ${count} entreprises réelles (PME/startups) ayant besoin d'un audit de sécurité web.
-${secteur ? 'Secteur : ' + secteur + '.' : 'Secteurs variés : e-commerce, SaaS, agence web, fintech, healthtech, proptech, conseil.'}
-${pays ? 'Pays : ' + pays + '.' : 'Pays : France principalement, quelques-unes en Belgique et Suisse.'}
-Taille : 5 à 250 employés. Exclure grandes entreprises et administrations.
-Numérotation : commence à ${startRang}.
+function sleep(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
 
-Réponds avec UNIQUEMENT ce JSON (rien avant, rien après) :
-[{"rang":${startRang},"nom":"Entreprise","site":"https://www.exemple.fr","secteur":"E-commerce","pays":"France","taille":"10-50 employes","technologies":["WordPress"],"score":8,"opportunites":"Audit CMS et plugins WordPress","services":["Audit CMS","Scan vulnerabilites"],"linkedin":"https://linkedin.com/company/exemple","contact":"contact@exemple.fr"},{"rang":${startRang+1},"nom":"..."}]`;
+/* ---------- FETCH BATCH (prompt ultra-court) ---------- */
+async function fetchBatch(apiKey, secteur, pays, startRang, count) {
+  const s = secteur || 'SaaS,e-commerce,agence,fintech,healthtech';
+  const p = pays    || 'France';
+
+  /* Prompt minimal pour rester sous 1000 tokens input */
+  const prompt = 'Liste ' + count + ' PME/startups reelles (' + s + ', ' + p + ', 5-250 employes) pour audit securite web. Rang debut: ' + startRang + '. JSON array uniquement, rien d\'autre:\n[{"rang":' + startRang + ',"nom":"...","site":"https://...","secteur":"...","pays":"' + p + '","taille":"...","technologies":["..."],"score":8,"opportunites":"...","services":["..."],"linkedin":"https://linkedin.com/company/...","contact":"..."}]';
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -128,17 +144,11 @@ Réponds avec UNIQUEMENT ce JSON (rien avant, rien après) :
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 6000,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 3000,
       messages: [
-        {
-          role: 'user',
-          content: prompt
-        },
-        {
-          role: 'assistant',
-          content: '['
-        }
+        { role: 'user',      content: prompt },
+        { role: 'assistant', content: '[' }
       ]
     })
   });
@@ -149,61 +159,42 @@ Réponds avec UNIQUEMENT ce JSON (rien avant, rien après) :
   }
 
   const data = await response.json();
-  const raw = (data.content || [])
+  const raw  = (data.content || [])
     .filter(function(b) { return b.type === 'text'; })
     .map(function(b) { return b.text; })
     .join('');
 
-  /* Le prefill '[ ' fait que la réponse commence après le '[' — on le remet */
-  const text = '[' + raw;
-
-  const result = parseArray(text);
-  return result || [];
+  const arr = parseArray('[' + raw);
+  return arr || [];
 }
 
 /* ---------- JSON ARRAY PARSER ---------- */
 function parseArray(text) {
   if (!text) return null;
-
-  /* Tentative 1 : parse direct */
   try { const r = JSON.parse(text.trim()); if (Array.isArray(r)) return r; } catch(e) {}
-
-  /* Tentative 2 : extraire entre [ et dernier ] */
-  const s = text.indexOf('[');
-  const e = text.lastIndexOf(']');
+  const s = text.indexOf('['), e = text.lastIndexOf(']');
   if (s !== -1 && e > s) {
     try { const r = JSON.parse(text.slice(s, e + 1)); if (Array.isArray(r)) return r; } catch(e2) {}
   }
-
-  /* Tentative 3 : nettoyer et réessayer */
-  const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
-  const s2 = clean.indexOf('[');
-  const e2 = clean.lastIndexOf(']');
-  if (s2 !== -1 && e2 > s2) {
-    try { const r = JSON.parse(clean.slice(s2, e2 + 1)); if (Array.isArray(r)) return r; } catch(e3) {}
-  }
-
-  /* Tentative 4 : réparer JSON tronqué en ajoutant }] */
+  /* Réparer JSON tronqué */
   if (s !== -1) {
-    const truncated = text.slice(s).trimEnd();
-    const attempts = [truncated + '}]', truncated + '"}]', truncated + '","contact":""}]'];
-    for (let i = 0; i < attempts.length; i++) {
-      try { const r = JSON.parse(attempts[i]); if (Array.isArray(r) && r.length) return r; } catch(e4) {}
+    const t = text.slice(s).trimEnd();
+    for (const suffix of ['}]', '"}]', '","contact":""}]']) {
+      try { const r = JSON.parse(t + suffix); if (Array.isArray(r) && r.length) return r; } catch(e3) {}
     }
   }
-
   return null;
 }
 
-/* ---------- PROGRESS ANIMATION ---------- */
+/* ---------- PROGRESS ---------- */
 function animateProgress() {
   let p = 0;
   document.getElementById('progressFill').style.width = '0%';
   clearInterval(progInterval);
   progInterval = setInterval(function() {
-    p = Math.min(p + Math.random() * 1.5, 90);
+    p = Math.min(p + Math.random() * 1.2, 90);
     document.getElementById('progressFill').style.width = Math.round(p) + '%';
-  }, 400);
+  }, 500);
 }
 
 /* ---------- FILTERS & SORT ---------- */
@@ -217,10 +208,9 @@ function applyFilters() {
     if (secteur && !(p.secteur || '').toLowerCase().includes(secteur)) return false;
     if (pays    && !(p.pays    || '').toLowerCase().includes(pays))    return false;
     if ((parseInt(p.score) || 0) < score) return false;
-    if (search  && !(p.nom + ' ' + p.site + ' ' + p.secteur + ' ' + p.pays).toLowerCase().includes(search)) return false;
+    if (search && !(p.nom + ' ' + p.site + ' ' + p.secteur + ' ' + p.pays).toLowerCase().includes(search)) return false;
     return true;
   });
-
   sortFiltered();
 }
 
@@ -238,8 +228,7 @@ function sortFiltered() {
 function sortTable(key) {
   if (sortKey === key) { sortDir *= -1; } else { sortKey = key; sortDir = -1; }
   document.querySelectorAll('thead th .sort-icon').forEach(function(el) {
-    el.textContent = '↕';
-    el.classList.remove('active');
+    el.textContent = '↕'; el.classList.remove('active');
   });
   const th = document.querySelector('thead th[data-key="' + key + '"] .sort-icon');
   if (th) { th.textContent = sortDir === -1 ? '↓' : '↑'; th.classList.add('active'); }
@@ -258,7 +247,7 @@ function renderTable() {
     pag.style.display    = 'none';
     empty.style.display  = 'flex';
     empty.querySelector('p').textContent = allProspects.length
-      ? 'Aucun prospect ne correspond aux filtres sélectionnés.'
+      ? 'Aucun prospect ne correspond aux filtres.'
       : 'Cliquez sur "Générer 50 prospects" pour démarrer.';
     return;
   }
@@ -278,20 +267,19 @@ function renderTable() {
     const liHtml = p.linkedin
       ? '<a href="' + esc(p.linkedin) + '" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;text-decoration:none">Voir ↗</a>'
       : '<span style="color:var(--text-light)">—</span>';
-
     return '<tr>'
-      + '<td style="color:var(--text-light);font-size:11px;text-align:center">' + (start + i + 1) + '</td>'
-      + '<td style="font-weight:500;min-width:130px">' + esc(p.nom || '—') + '</td>'
-      + '<td class="tag-link" style="min-width:120px"><a href="' + esc(p.site || '#') + '" target="_blank" rel="noopener">' + esc(siteLabel) + '</a></td>'
-      + '<td><span class="tag">' + esc(p.secteur || '—') + '</span></td>'
-      + '<td style="white-space:nowrap">' + esc(p.pays || '—') + '</td>'
-      + '<td style="font-size:11px;color:var(--text-muted);white-space:nowrap">' + esc(p.taille || '—') + '</td>'
+      + '<td style="color:var(--text-light);font-size:11px;text-align:center">' + (start+i+1) + '</td>'
+      + '<td style="font-weight:500;min-width:130px">' + esc(p.nom||'—') + '</td>'
+      + '<td class="tag-link" style="min-width:120px"><a href="' + esc(p.site||'#') + '" target="_blank" rel="noopener">' + esc(siteLabel) + '</a></td>'
+      + '<td><span class="tag">' + esc(p.secteur||'—') + '</span></td>'
+      + '<td style="white-space:nowrap">' + esc(p.pays||'—') + '</td>'
+      + '<td style="font-size:11px;color:var(--text-muted);white-space:nowrap">' + esc(p.taille||'—') + '</td>'
       + '<td style="min-width:150px">' + techs + '</td>'
       + '<td style="text-align:center"><span class="score-pill ' + cls + '">' + sc + '</span></td>'
-      + '<td style="font-size:12px;color:var(--text-muted)">' + esc(p.opportunites || '—') + '</td>'
+      + '<td style="font-size:12px;color:var(--text-muted)">' + esc(p.opportunites||'—') + '</td>'
       + '<td style="min-width:160px">' + svcs + '</td>'
       + '<td>' + liHtml + '</td>'
-      + '<td style="font-size:11px;color:var(--text-muted);min-width:140px">' + esc(p.contact || '—') + '</td>'
+      + '<td style="font-size:11px;color:var(--text-muted);min-width:140px">' + esc(p.contact||'—') + '</td>'
       + '</tr>';
   }).join('');
 
@@ -299,7 +287,7 @@ function renderTable() {
   document.getElementById('pageInfo').textContent =
     filtered.length + ' prospect' + (filtered.length > 1 ? 's' : '') + ' — page ' + currentPage + ' / ' + totalPages;
   document.getElementById('pageBtns').innerHTML = Array.from({ length: totalPages }, function(_, i) {
-    return '<button class="page-btn ' + (i + 1 === currentPage ? 'active' : '') + '" onclick="goPage(' + (i + 1) + ')">' + (i + 1) + '</button>';
+    return '<button class="page-btn ' + (i+1===currentPage?'active':'') + '" onclick="goPage(' + (i+1) + ')">' + (i+1) + '</button>';
   }).join('');
   pag.style.display = 'flex';
 }
@@ -309,12 +297,9 @@ function goPage(n) { currentPage = n; renderTable(); }
 /* ---------- STATS ---------- */
 function updateStats() {
   const total   = allProspects.length;
-  const high    = allProspects.filter(function(p) { return (parseInt(p.score) || 0) >= 8; }).length;
-  const avg     = total
-    ? (allProspects.reduce(function(s, p) { return s + (parseInt(p.score) || 0); }, 0) / total).toFixed(1)
-    : 0;
+  const high    = allProspects.filter(function(p) { return (parseInt(p.score)||0) >= 8; }).length;
+  const avg     = total ? (allProspects.reduce(function(s,p) { return s+(parseInt(p.score)||0); }, 0)/total).toFixed(1) : 0;
   const sectors = new Set(allProspects.map(function(p) { return p.secteur; })).size;
-
   document.getElementById('statTotal').textContent   = total;
   document.getElementById('statHigh').textContent    = high;
   document.getElementById('statAvg').textContent     = avg;
@@ -326,25 +311,19 @@ function exportCsv() {
   if (!filtered.length) return;
   const headers = ['Rang','Nom','Site','Secteur','Pays','Taille','Technologies','Score','Opportunites','Services','LinkedIn','Contact'];
   const rows = filtered.map(function(p, i) {
-    return [
-      i + 1, p.nom, p.site, p.secteur, p.pays, p.taille,
-      (p.technologies || []).join(' | '),
-      p.score, p.opportunites,
-      (p.services || []).join(' | '),
-      p.linkedin, p.contact
-    ].map(function(v) { return '"' + String(v || '').replace(/"/g, '""') + '"'; });
+    return [i+1,p.nom,p.site,p.secteur,p.pays,p.taille,(p.technologies||[]).join(' | '),p.score,p.opportunites,(p.services||[]).join(' | '),p.linkedin,p.contact]
+      .map(function(v) { return '"' + String(v||'').replace(/"/g,'""') + '"'; });
   });
-  const csv = '\uFEFF' + [headers].concat(rows).map(function(r) { return r.join(','); }).join('\r\n');
-  download('prospects-kenan-systems.csv', csv, 'text/csv;charset=utf-8;');
+  download('prospects-kenan-systems.csv', '\uFEFF' + [headers].concat(rows).map(function(r){return r.join(',');}).join('\r\n'), 'text/csv;charset=utf-8;');
 }
 
 function exportMd() {
   if (!filtered.length) return;
-  const header = '| # | Entreprise | Site | Secteur | Pays | Score | Opportunites | Services |\n|---|---|---|---|---|---|---|---|';
-  const rows = filtered.map(function(p, i) {
-    return '| ' + (i+1) + ' | **' + p.nom + '** | [' + (p.site||'').replace(/^https?:\/\/(www\.)?/,'') + '](' + p.site + ') | ' + p.secteur + ' | ' + p.pays + ' | ' + p.score + '/10 | ' + p.opportunites + ' | ' + (p.services||[]).join(', ') + ' |';
+  const hdr = '| # | Entreprise | Site | Secteur | Pays | Score | Opportunites |\n|---|---|---|---|---|---|---|';
+  const rows = filtered.map(function(p,i) {
+    return '| '+(i+1)+' | **'+p.nom+'** | ['+(p.site||'').replace(/^https?:\/\/(www\.)?/,'')+']('+p.site+') | '+p.secteur+' | '+p.pays+' | '+p.score+'/10 | '+p.opportunites+' |';
   });
-  download('prospects-kenan-systems.md', '# Prospects Kenan Systems\n\nGenere le ' + new Date().toLocaleDateString('fr-FR') + '\n\n' + [header].concat(rows).join('\n'), 'text/markdown');
+  download('prospects-kenan-systems.md', '# Prospects Kenan Systems\n\n'+new Date().toLocaleDateString('fr-FR')+'\n\n'+[hdr].concat(rows).join('\n'), 'text/markdown');
 }
 
 function download(filename, content, type) {
@@ -356,14 +335,14 @@ function download(filename, content, type) {
   document.body.removeChild(a);
 }
 
-/* ---------- UI HELPERS ---------- */
+/* ---------- UI ---------- */
 function setLoading(on) {
   const btn = document.getElementById('genBtn');
   if (!btn) return;
   btn.disabled = on;
   btn.innerHTML = on
-    ? '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true" style="animation:spin .8s linear infinite"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" stroke-width="1.5" stroke-dasharray="28" stroke-dashoffset="8" opacity="0.35"/><path d="M7.5 1.5a6 6 0 016 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Generation en cours...'
-    : '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M7.5 1v2M7.5 12v2M1 7.5h2M12 7.5h2M3.05 3.05l1.42 1.42M10.53 10.53l1.42 1.42M3.05 11.95l1.42-1.42M10.53 4.47l1.42-1.42" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg> Generer 50 prospects';
+    ? '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true" style="animation:spin .8s linear infinite"><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" stroke-width="1.5" stroke-dasharray="28" stroke-dashoffset="8" opacity="0.35"/><path d="M7.5 1.5a6 6 0 016 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Génération en cours...'
+    : '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M7.5 1v2M7.5 12v2M1 7.5h2M12 7.5h2M3.05 3.05l1.42 1.42M10.53 10.53l1.42 1.42M3.05 11.95l1.42-1.42M10.53 4.47l1.42-1.42" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg> Générer 30 prospects';
 }
 
 function showError(msg) {
@@ -379,11 +358,7 @@ function hideError() {
 }
 
 function esc(s) {
-  return String(s || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 /* ---------- INIT ---------- */
@@ -396,5 +371,5 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('filterPays').addEventListener('change', applyFilters);
   document.getElementById('filterScore').addEventListener('change', applyFilters);
   const apiInput = document.getElementById('apiKeyInput');
-  if (apiInput) apiInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') saveApiKey(); });
+  if (apiInput) apiInput.addEventListener('keydown', function(e) { if (e.key==='Enter') saveApiKey(); });
 });
