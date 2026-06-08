@@ -75,57 +75,14 @@ async function generateProspects() {
   document.getElementById('progressBar').style.display  = 'block';
   animateProgress();
 
-  const prompt = `Tu es un analyste commercial spécialisé en cybersécurité B2B.
-Génère une liste de 50 PME et startups réelles susceptibles d'avoir besoin d'un audit de sécurité web.
-
-Critères :
-- Entreprises de 5 à 250 employés
-- Secteurs : PME, startups, agences web, e-commerce, SaaS, fintech, proptech, healthtech, cabinets de conseil
-- Avoir un site web avec formulaire, espace client ou application web
-- Exclure grandes entreprises et administrations publiques
-${secteur ? '- Secteur : ' + secteur : ''}
-${pays ? '- Pays : ' + pays : '- Pays : France en priorité, puis Belgique, Suisse, Luxembourg'}
-
-IMPORTANT : Réponds UNIQUEMENT avec du JSON brut. Pas de texte avant, pas de texte après, pas de backticks, pas de markdown. Commence directement par { et termine par }.
-
-Format exact :
-{"prospects":[{"rang":1,"nom":"Nom entreprise","site":"https://www.exemple.fr","secteur":"E-commerce","pays":"France","taille":"20-50 employes","technologies":["WordPress","WooCommerce"],"score":9,"opportunites":"Audit CMS et plugins, formulaire non securise","services":["Audit CMS","Scan vulnerabilites"],"linkedin":"https://www.linkedin.com/company/exemple","contact":"contact@exemple.fr"}]}
-
-Classe par score décroissant (10 = très pertinent, 1 = peu pertinent). Génère exactement 50 entrées.`;
-
+  /* Deux appels : d'abord 20 prospects, puis 30 autres — évite la troncature */
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 8000,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
+    const batch1 = await fetchProspects(apiKey, secteur, pays, 1, 20);
+    const batch2 = await fetchProspects(apiKey, secteur, pays, 21, 30);
+    allProspects = batch1.concat(batch2);
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || 'Erreur API (' + response.status + ')');
-    }
+    if (!allProspects.length) throw new Error('Aucun prospect reçu. Réessayez.');
 
-    const data = await response.json();
-    const text = (data.content || [])
-      .filter(function(b) { return b.type === 'text'; })
-      .map(function(b) { return b.text; })
-      .join('');
-
-    const result = parseJSON(text);
-    if (!result || !result.prospects || !result.prospects.length) {
-      throw new Error('Aucun prospect recu. Reessayez.');
-    }
-
-    allProspects = result.prospects;
     applyFilters();
     updateStats();
 
@@ -150,32 +107,89 @@ Classe par score décroissant (10 = très pertinent, 1 = peu pertinent). Génèr
   setLoading(false);
 }
 
-/* ---------- JSON PARSER ROBUSTE ---------- */
-function parseJSON(text) {
+/* ---------- FETCH BATCH ---------- */
+async function fetchProspects(apiKey, secteur, pays, startRang, count) {
+  const prompt = `Tu es un analyste commercial B2B cybersécurité.
+Génère une liste de ${count} entreprises réelles (PME/startups) ayant besoin d'un audit de sécurité web.
+${secteur ? 'Secteur : ' + secteur + '.' : 'Secteurs variés : e-commerce, SaaS, agence web, fintech, healthtech, proptech, conseil.'}
+${pays ? 'Pays : ' + pays + '.' : 'Pays : France principalement, quelques-unes en Belgique et Suisse.'}
+Taille : 5 à 250 employés. Exclure grandes entreprises et administrations.
+Numérotation : commence à ${startRang}.
+
+Réponds avec UNIQUEMENT ce JSON (rien avant, rien après) :
+[{"rang":${startRang},"nom":"Entreprise","site":"https://www.exemple.fr","secteur":"E-commerce","pays":"France","taille":"10-50 employes","technologies":["WordPress"],"score":8,"opportunites":"Audit CMS et plugins WordPress","services":["Audit CMS","Scan vulnerabilites"],"linkedin":"https://linkedin.com/company/exemple","contact":"contact@exemple.fr"},{"rang":${startRang+1},"nom":"..."}]`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 6000,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        },
+        {
+          role: 'assistant',
+          content: '['
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(function() { return {}; });
+    throw new Error(err.error ? err.error.message : 'Erreur API ' + response.status);
+  }
+
+  const data = await response.json();
+  const raw = (data.content || [])
+    .filter(function(b) { return b.type === 'text'; })
+    .map(function(b) { return b.text; })
+    .join('');
+
+  /* Le prefill '[ ' fait que la réponse commence après le '[' — on le remet */
+  const text = '[' + raw;
+
+  const result = parseArray(text);
+  return result || [];
+}
+
+/* ---------- JSON ARRAY PARSER ---------- */
+function parseArray(text) {
   if (!text) return null;
 
-  // Tentative 1 : texte brut direct
-  try { return JSON.parse(text.trim()); } catch(e) {}
+  /* Tentative 1 : parse direct */
+  try { const r = JSON.parse(text.trim()); if (Array.isArray(r)) return r; } catch(e) {}
 
-  // Tentative 2 : extraire entre le premier { et dernier }
-  const start = text.indexOf('{');
-  const end   = text.lastIndexOf('}');
-  if (start !== -1 && end !== -1 && end > start) {
-    try { return JSON.parse(text.slice(start, end + 1)); } catch(e) {}
+  /* Tentative 2 : extraire entre [ et dernier ] */
+  const s = text.indexOf('[');
+  const e = text.lastIndexOf(']');
+  if (s !== -1 && e > s) {
+    try { const r = JSON.parse(text.slice(s, e + 1)); if (Array.isArray(r)) return r; } catch(e2) {}
   }
 
-  // Tentative 3 : nettoyer les backticks markdown et réessayer
+  /* Tentative 3 : nettoyer et réessayer */
   const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
-  const s2 = clean.indexOf('{');
-  const e2 = clean.lastIndexOf('}');
-  if (s2 !== -1 && e2 !== -1 && e2 > s2) {
-    try { return JSON.parse(clean.slice(s2, e2 + 1)); } catch(e) {}
+  const s2 = clean.indexOf('[');
+  const e2 = clean.lastIndexOf(']');
+  if (s2 !== -1 && e2 > s2) {
+    try { const r = JSON.parse(clean.slice(s2, e2 + 1)); if (Array.isArray(r)) return r; } catch(e3) {}
   }
 
-  // Tentative 4 : chercher spécifiquement le tableau prospects
-  const arrMatch = text.match(/"prospects"\s*:\s*\[[\s\S]*\]/);
-  if (arrMatch) {
-    try { return JSON.parse('{"' + arrMatch[0] + '}'); } catch(e) {}
+  /* Tentative 4 : réparer JSON tronqué en ajoutant }] */
+  if (s !== -1) {
+    const truncated = text.slice(s).trimEnd();
+    const attempts = [truncated + '}]', truncated + '"}]', truncated + '","contact":""}]'];
+    for (let i = 0; i < attempts.length; i++) {
+      try { const r = JSON.parse(attempts[i]); if (Array.isArray(r) && r.length) return r; } catch(e4) {}
+    }
   }
 
   return null;
@@ -187,7 +201,7 @@ function animateProgress() {
   document.getElementById('progressFill').style.width = '0%';
   clearInterval(progInterval);
   progInterval = setInterval(function() {
-    p = Math.min(p + Math.random() * 2.5, 88);
+    p = Math.min(p + Math.random() * 1.5, 90);
     document.getElementById('progressFill').style.width = Math.round(p) + '%';
   }, 400);
 }
@@ -320,7 +334,7 @@ function exportCsv() {
       p.linkedin, p.contact
     ].map(function(v) { return '"' + String(v || '').replace(/"/g, '""') + '"'; });
   });
-  const csv = '\uFEFF' + [headers, ...rows].map(function(r) { return r.join(','); }).join('\r\n');
+  const csv = '\uFEFF' + [headers].concat(rows).map(function(r) { return r.join(','); }).join('\r\n');
   download('prospects-kenan-systems.csv', csv, 'text/csv;charset=utf-8;');
 }
 
@@ -328,7 +342,7 @@ function exportMd() {
   if (!filtered.length) return;
   const header = '| # | Entreprise | Site | Secteur | Pays | Score | Opportunites | Services |\n|---|---|---|---|---|---|---|---|';
   const rows = filtered.map(function(p, i) {
-    return '| ' + (i + 1) + ' | **' + p.nom + '** | [' + (p.site || '').replace(/^https?:\/\/(www\.)?/, '') + '](' + p.site + ') | ' + p.secteur + ' | ' + p.pays + ' | ' + p.score + '/10 | ' + p.opportunites + ' | ' + (p.services || []).join(', ') + ' |';
+    return '| ' + (i+1) + ' | **' + p.nom + '** | [' + (p.site||'').replace(/^https?:\/\/(www\.)?/,'') + '](' + p.site + ') | ' + p.secteur + ' | ' + p.pays + ' | ' + p.score + '/10 | ' + p.opportunites + ' | ' + (p.services||[]).join(', ') + ' |';
   });
   download('prospects-kenan-systems.md', '# Prospects Kenan Systems\n\nGenere le ' + new Date().toLocaleDateString('fr-FR') + '\n\n' + [header].concat(rows).join('\n'), 'text/markdown');
 }
@@ -375,18 +389,12 @@ function esc(s) {
 /* ---------- INIT ---------- */
 document.addEventListener('DOMContentLoaded', function() {
   checkApiKeyOnLoad();
-
   const style = document.createElement('style');
   style.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
   document.head.appendChild(style);
-
   document.getElementById('filterSecteur').addEventListener('change', applyFilters);
   document.getElementById('filterPays').addEventListener('change', applyFilters);
   document.getElementById('filterScore').addEventListener('change', applyFilters);
   const apiInput = document.getElementById('apiKeyInput');
-  if (apiInput) {
-    apiInput.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') saveApiKey();
-    });
-  }
+  if (apiInput) apiInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') saveApiKey(); });
 });
