@@ -126,8 +126,8 @@ async function fetchBatch(apiKey, secteur, pays, startRang, count) {
   const prompt = 'CONTRAINTE ABSOLUE: toutes les entreprises DOIVENT avoir STRICTEMENT entre 1 et 20 salaries. INTERDIT de depasser 20 salaries. Aucune exception.'
     + ' Liste ' + count + ' vraies TPE/micro-entreprises (' + s + ', ' + p + ') de 1 a 20 salaries maximum pour audit securite web.'
     + ' Exemples de taille acceptee: "2-5 salaries", "8 salaries", "15-20 salaries". JAMAIS "50 employes" ou plus.'
-    + ' Rang debut: ' + startRang + '. JSON array uniquement, rien d\'autre:'
-    + '\n[{"rang":' + startRang + ',"nom":"...","site":"https://...","secteur":"...","pays":"' + p + '","taille":"5-10 salaries","technologies":["..."],"score":8,"opportunites":"...","services":["..."],"linkedin":"https://linkedin.com/company/...","contact":"..."}]';
+    + ' Rang debut: ' + startRang + '. Inclure "email" (adresse trouvable publiquement sur le site, ex: contact@, info@, ou "non public") et "contact" (URL page contact). JSON array uniquement, rien d\'autre:'
+    + '\n[{"rang":' + startRang + ',"nom":"...","site":"https://...","secteur":"...","pays":"' + p + '","taille":"5-10 salaries","technologies":["..."],"score":8,"opportunites":"...","services":["..."],"linkedin":"https://linkedin.com/company/...","contact":"https://site.fr/contact","email":"contact@site.fr ou vide si inconnu"}]';
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -273,7 +273,16 @@ function renderTable() {
       + '<td style="font-size:12px;color:var(--text-muted)">' + esc(p.opportunites||'—') + '</td>'
       + '<td style="min-width:160px">' + svcs + '</td>'
       + '<td>' + liHtml + '</td>'
-      + '<td style="font-size:11px;color:var(--text-muted);min-width:140px">' + esc(p.contact||'—') + '</td>'
+      + '<td style="font-size:11px;color:var(--text-muted);min-width:140px">'
+      + (p.contact && p.contact.startsWith('http')
+          ? '<a href="' + esc(p.contact) + '" target="_blank" rel="noopener" style="color:var(--accent);font-size:11px;text-decoration:none">Page contact ↗</a>'
+          : esc(p.contact||'—'))
+      + '</td>'
+      + '<td style="font-size:11px;color:var(--text-muted);min-width:160px">'
+      + (p.email && p.email !== 'non public' && p.email !== '—'
+          ? '<a href="mailto:' + esc(p.email) + '" style="color:var(--accent);font-size:11px;text-decoration:none">' + esc(p.email) + '</a>'
+          : '<span style="color:var(--text-light)">' + esc(p.email||'Non public') + '</span>')
+      + '</td>'
       + '</tr>';
   }).join('');
 
@@ -303,9 +312,9 @@ function updateStats() {
 /* ---------- EXPORT ---------- */
 function exportCsv() {
   if (!filtered.length) return;
-  const headers = ['Rang','Nom','Site','Secteur','Pays','Taille','Technologies','Score','Opportunites','Services','LinkedIn','Contact'];
+  const headers = ['Rang','Nom','Site','Secteur','Pays','Taille','Technologies','Score','Opportunites','Services','LinkedIn','Contact','Email'];
   const rows = filtered.map(function(p, i) {
-    return [i+1,p.nom,p.site,p.secteur,p.pays,p.taille,(p.technologies||[]).join(' | '),p.score,p.opportunites,(p.services||[]).join(' | '),p.linkedin,p.contact]
+    return [i+1,p.nom,p.site,p.secteur,p.pays,p.taille,(p.technologies||[]).join(' | '),p.score,p.opportunites,(p.services||[]).join(' | '),p.linkedin,p.contact,p.email]
       .map(function(v) { return '"' + String(v||'').replace(/"/g,'""') + '"'; });
   });
   download('prospects-kenan-systems.csv', '\uFEFF' + [headers].concat(rows).map(function(r){return r.join(',');}).join('\r\n'), 'text/csv;charset=utf-8;');
