@@ -123,7 +123,7 @@ async function fetchBatch(apiKey, secteur, pays, startRang, count) {
   const p = pays    || 'France';
 
   /* Prompt minimal pour rester sous 1000 tokens input */
-  const prompt = 'Liste ' + count + ' PME/startups reelles (' + s + ', ' + p + ', 5-250 employes) pour audit securite web. Rang debut: ' + startRang + '. JSON array uniquement, rien d\'autre:\n[{"rang":' + startRang + ',"nom":"...","site":"https://...","secteur":"...","pays":"' + p + '","taille":"...","technologies":["..."],"score":8,"opportunites":"...","services":["..."],"linkedin":"https://linkedin.com/company/...","contact":"..."}]';
+  const prompt = 'Liste ' + count + ' PME/startups reelles (' + s + ', ' + p + ', 1-20 employes, TPE/micro-entreprises uniquement) pour audit securite web. Rang debut: ' + startRang + '. JSON array uniquement, rien d\'autre:\n[{"rang":' + startRang + ',"nom":"...","site":"https://...","secteur":"...","pays":"' + p + '","taille":"...","technologies":["..."],"score":8,"opportunites":"...","services":["..."],"linkedin":"https://linkedin.com/company/...","contact":"..."}]';
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
