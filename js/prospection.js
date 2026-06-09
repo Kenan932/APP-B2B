@@ -123,7 +123,11 @@ async function fetchBatch(apiKey, secteur, pays, startRang, count) {
   const p = pays    || 'France';
 
   /* Prompt minimal pour rester sous 1000 tokens input */
-  const prompt = 'Liste ' + count + ' PME/startups reelles (' + s + ', ' + p + ', 1-20 employes, TPE/micro-entreprises uniquement) pour audit securite web. Rang debut: ' + startRang + '. JSON array uniquement, rien d\'autre:\n[{"rang":' + startRang + ',"nom":"...","site":"https://...","secteur":"...","pays":"' + p + '","taille":"...","technologies":["..."],"score":8,"opportunites":"...","services":["..."],"linkedin":"https://linkedin.com/company/...","contact":"..."}]';
+  const prompt = 'CONTRAINTE ABSOLUE: toutes les entreprises DOIVENT avoir STRICTEMENT entre 1 et 20 salaries. INTERDIT de depasser 20 salaries. Aucune exception.'
+    + ' Liste ' + count + ' vraies TPE/micro-entreprises (' + s + ', ' + p + ') de 1 a 20 salaries maximum pour audit securite web.'
+    + ' Exemples de taille acceptee: "2-5 salaries", "8 salaries", "15-20 salaries". JAMAIS "50 employes" ou plus.'
+    + ' Rang debut: ' + startRang + '. JSON array uniquement, rien d\'autre:'
+    + '\n[{"rang":' + startRang + ',"nom":"...","site":"https://...","secteur":"...","pays":"' + p + '","taille":"5-10 salaries","technologies":["..."],"score":8,"opportunites":"...","services":["..."],"linkedin":"https://linkedin.com/company/...","contact":"..."}]';
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
